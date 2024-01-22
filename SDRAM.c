@@ -88,7 +88,7 @@ FLASHMEM static float SEMC_freq(uint32_t cbcdr)
 	else
 	{
 		clk = F_CPU_ACTUAL; // peripheral clock (CPU clk before AHB prescaler)
-		switch (cbcdr & (CCM_CBCDR_AHB_PODF(7)))
+		switch (CCM_CBCDR & (CCM_CBCDR_AHB_PODF(7)))
 		{
 			case CCM_CBCDR_AHB_PODF(7):
 				clk *= 8.0f;
