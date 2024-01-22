@@ -25,6 +25,8 @@ struct smalloc_pool extmem_smalloc_pool;
 #define SDRAM_BASE 0x80000000
 // default SDRAM size (in MBs)
 #define SDRAM_SIZE 32
+// CAS latency 3 will be used if frequency is above this, else use CL=2
+#define SDRAM_CAS2_MAX 1665e5f
 
 #define PSRAM_BASE 0x70000000
 
@@ -339,10 +341,12 @@ FLASHMEM void startup_middle_hook(void)
 	/* run SEMC clock */
 	SEMC_MCR &= ~SEMC_MCR_MDIS;
 
+	uint32_t CAS = (freq > SDRAM_CAS2_MAX ? 3 : 2);
+
 	/* configure SEMC for SDRAM: IS42S16160J-6 (32MB / 166MHz / CL3) */
 	SEMC_BR0 = SDRAM_BASE | SEMC_BR_MS(13) | SEMC_BR_VLD;
 	SEMC_SDRAMCR0 = \
-		SEMC_SDRAMCR0_CL(3)  | // CAS latency = 3
+		SEMC_SDRAMCR0_CL(CAS)  | // CAS latency = 2 or 3
 		SEMC_SDRAMCR0_COL(3) | // 3 = 9 bit column
 		SEMC_SDRAMCR0_BL(3)  | // 3 = 8 word burst length
 		SEMC_SDRAMCR0_PS;      // 16-bit words
@@ -384,8 +388,8 @@ FLASHMEM void startup_middle_hook(void)
 		return;
 	if (!IPCommand(12) || !IPCommand(12)) // 2x AutoRefresh
 		return;
-	/* Set mode register: burst length=8, CAS = 3 */
-	if (!IPCommandWrite(10, (3<<4)|3))
+	/* Set mode register: burst length=8, CAS */
+	if (!IPCommandWrite(10, (CAS<<4)|3))
 		return;
 	/* Enable refresh */
 	SEMC_SDRAMCR3 |= SEMC_SDRAMCR3_REN;
