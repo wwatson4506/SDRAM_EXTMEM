@@ -71,6 +71,10 @@ typedef struct {
   uint32_t hpolarity; // 0 (active low hsync/negative) or LCDIF_VDCTRL0_HSYNC_POL (active high/positive)
 } vga_timing;
 
+const vga_timing t1920x1080x60 = {1080, 4, 5, 36, 1920, 88, 44, 148, 297, 48, LCDIF_VDCTRL0_VSYNC_POL, LCDIF_VDCTRL0_HSYNC_POL};
+// as above but with half clock speed
+const vga_timing t1920x1080x30 = {1080, 4, 5, 36, 1920, 88, 44, 148, 297, 96, LCDIF_VDCTRL0_VSYNC_POL, LCDIF_VDCTRL0_HSYNC_POL};
+const vga_timing t1680x1050x60 = {1050, 1, 3, 33, 1680, 104, 184, 288, 6125, 999, LCDIF_VDCTRL0_VSYNC_POL, 0};
 const vga_timing t1280x1024x60 = {1024, 1, 3, 38, 1280, 48, 112, 248, 108, 24, LCDIF_VDCTRL0_VSYNC_POL, LCDIF_VDCTRL0_HSYNC_POL};
 const vga_timing t1280x720x60 = {720, 13, 5, 12, 1280, 80, 40, 248, 7425, 2400, LCDIF_VDCTRL0_VSYNC_POL, LCDIF_VDCTRL0_HSYNC_POL};
 const vga_timing t1024x768x60 = {768, 3, 6, 29, 1024, 24, 136, 160, 65, 24, 0, 0};
@@ -107,7 +111,7 @@ const vga_timing t640x350x70 =   {350, 37, 2, 60, 640, 16, 96, 48, 150, 143, 0, 
 
 // defined using max dimensions due to laziness
 // LCDIF framebuffers must be 64-byte aligned
-typedef uint8_t framebuffer_t[1280*1024] __attribute__((aligned(64)));
+typedef uint8_t framebuffer_t[1920*1080] __attribute__((aligned(64)));
 static uint8_t* s_frameBuffer[2];
 
 static volatile bool s_frameDone = false;
@@ -362,14 +366,13 @@ void setup() {
 
 void loop() {
   static uint32_t nextBufferIndex;
-  while (!s_frameDone)
-    asm volatile("wfi");
+  if (s_frameDone) {
+    nextBufferIndex ^= 1;
 
-  nextBufferIndex ^= 1;
-
-  // this is the buffer that just finished, refresh it
-  FillFrameBuffer(s_frameBuffer[nextBufferIndex]);
-  // queue for display
-  LCDIF_NEXT_BUF = (uint32_t)s_frameBuffer[nextBufferIndex];
-  s_frameDone = false;
+    // this is the buffer that just finished, redraw it
+    FillFrameBuffer(s_frameBuffer[nextBufferIndex]);
+    // queue for display
+    LCDIF_NEXT_BUF = (uint32_t)s_frameBuffer[nextBufferIndex];
+    s_frameDone = false;
+  }
 }
