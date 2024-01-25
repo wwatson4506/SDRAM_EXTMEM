@@ -88,13 +88,13 @@ void setup()
 
   if (CrashReport) CrashReport.printTo(Serial);
 
+  uint8_t size = extmem_size;
   memory_begin = (uint32_t *)extmem_base;
-  psram_size = extmem_size * 1024 * 1024;
+  psram_size = size * 1024 * 1024;
   memory_end = memory_begin + (psram_size / sizeof(uint32_t));
-  psram_sizeMB = (float)extmem_size;
+  psram_sizeMB = (float)size;
 
   while (!Serial) ; // wait
-  uint8_t size = extmem_size;
   Serial.printf("\n\nEXTMEM Memory Test, %d Mbyte\n", size);
   if (size == 0) return;
 
