@@ -1,32 +1,25 @@
-#include "Arduino.h"
+#include "SDRAM.h"
 #include "smalloc.h"
 
 extern uint8_t external_psram_size;
 void* extmem_base;
-unsigned int extmem_size;
+size_t extmem_size;
+
+// default = 166MHz
+uint32_t semc_clk __attribute((weak)) = SEMC_CLOCK_166;
 
 #ifndef ARDUINO_TEENSY41
 struct smalloc_pool extmem_smalloc_pool;
 #endif
 
-#define PROBE_DATA 0x5A698421
-
-#define SEMC_CLOCK_133  (CCM_CBCDR_SEMC_CLK_SEL | CCM_CBCDR_SEMC_ALT_CLK_SEL | CCM_CBCDR_SEMC_PODF(4))
-#define SEMC_CLOCK_166  (CCM_CBCDR_SEMC_CLK_SEL | CCM_CBCDR_SEMC_ALT_CLK_SEL | CCM_CBCDR_SEMC_PODF(3))
-#define SEMC_CLOCK_221  (CCM_CBCDR_SEMC_CLK_SEL | CCM_CBCDR_SEMC_ALT_CLK_SEL | CCM_CBCDR_SEMC_PODF(2))
-#define SEMC_CLOCK_198  (CCM_CBCDR_SEMC_CLK_SEL | CCM_CBCDR_SEMC_PODF(1))
-
-#define SEMC_CLOCK_CPU_DIV_4 (CCM_CBCDR_SEMC_PODF(3))
-#define SEMC_CLOCK_CPU_DIV_3 (CCM_CBCDR_SEMC_PODF(2))
-
-// default = 166MHz
-#define SEMC_CLOCK SEMC_CLOCK_166
 // default base address
 #define SDRAM_BASE 0x80000000
 // default SDRAM size (in MBs)
 #define SDRAM_SIZE 32
 // CAS latency 3 will be used if frequency is above this, else use CL=2
 #define SDRAM_CAS2_MAX 1665e5f
+
+#define PROBE_DATA 0x5A698421
 
 #define PSRAM_BASE 0x70000000
 
@@ -145,7 +138,7 @@ FLASHMEM float extmem_freq() {
 		return -1.0f;
 
 	if (extmem_base == (void*)SDRAM_BASE)
-		return SEMC_freq(SEMC_CLOCK);
+		return SEMC_freq(CCM_CBCDR);
 
 	if (extmem_base == (void*)PSRAM_BASE)
 		return PSRAM_freq(CCM_CBCMR);
@@ -305,10 +298,10 @@ FLASHMEM void startup_middle_hook(void)
 	/* Configure SEMC clock */
 	uint32_t cbcdr = CCM_CBCDR;
 	cbcdr &= ~(CCM_CBCDR_SEMC_PODF(7) | CCM_CBCDR_SEMC_ALT_CLK_SEL | CCM_CBCDR_SEMC_CLK_SEL);
-	cbcdr |= SEMC_CLOCK;
+	cbcdr |= semc_clk;
 	CCM_CBCDR = cbcdr;
 
-	const float freq = SEMC_freq(SEMC_CLOCK);
+	const float freq = SEMC_freq(semc_clk);
 
 	delayMicroseconds(1);
 	CCM_CCGR3 |= CCM_CCGR3_SEMC(CCM_CCGR_ON);
@@ -333,7 +326,7 @@ FLASHMEM void startup_middle_hook(void)
 		}
 	}
 
-	SEMC_MCR = SEMC_MCR_MDIS | SEMC_MCR_BTO(0x1F) | (SEMC_CLOCK != SEMC_CLOCK_133 ? SEMC_MCR_DQSMD : 0);
+	SEMC_MCR = SEMC_MCR_MDIS | SEMC_MCR_BTO(0x1F) | (freq > 133e6f ? SEMC_MCR_DQSMD : 0);
 
 	SEMC_BMCR0 = SEMC_BMCR0_WQOS(5) | SEMC_BMCR0_WAGE(8) | SEMC_BMCR0_WSH(0x40) | SEMC_BMCR0_WRWS(0x10);
 	SEMC_BMCR1 = SEMC_BMCR1_WQOS(5) | SEMC_BMCR1_WAGE(8) | SEMC_BMCR1_WPH(0x60) | SEMC_BMCR1_WRWS(0x24) | SEMC_BMCR1_WBR(0x40);

@@ -86,7 +86,8 @@ const vga_timing t640x400x70 =   {400, 12, 2, 35, 640, 16, 96, 48, 150, 143, LCD
 const vga_timing t640x350x70 =   {350, 37, 2, 60, 640, 16, 96, 48, 150, 143, 0, LCDIF_VDCTRL0_HSYNC_POL};
 
 // select desired mode here
-#define timing t1280x1024x60
+#define timing t1920x1080x60
+uint32_t semc_clk = SEMC_CLOCK_CPU_DIV_3;
 
 // PIN OUTPUTS FOR TEENSY 4.1
 // red/green/blue: two-thirds of 0.7V
