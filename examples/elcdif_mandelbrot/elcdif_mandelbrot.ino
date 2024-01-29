@@ -58,7 +58,7 @@ uint32_t semc_clk = SEMC_CLOCK_CPU_DIV_3;
 // defined using max dimensions due to laziness
 // LCDIF framebuffers must be 64-byte aligned
 typedef uint8_t framebuffer_t[1920*1080] __attribute__((aligned(64)));
-static uint8_t* s_frameBuffer[2];
+static uint8_t *s_frameBuffer;
 
 static volatile bool s_frameDone = false;
 
@@ -183,16 +183,14 @@ FLASHMEM static void init_lcd(const vga_timing* vid) {
 }
 
 FLASHMEM static void InitLUT(void) {
-  /* index 6 in the "classic" 16-color palette should be brown instead of dark yellow.
-   * The values of green and green-intensity are swapped for this entry to accomplish this
-   */
-   
+  // used to rotate palette on each call
+  static size_t rot;
+
   // bits in palette entries match the LCD_DATA* signals
   static const uint32_t red = 1 << 6;                        // red = pin 6
   static const uint32_t green = 1 << 7;                      // green = pin 32
   static const uint32_t blue = 1 << 8;                       // blue = pin 9
-  static const uint32_t intensity_g = 1 << 12;               // intensity_g = pin 8
-  static const uint32_t intensity = (1 << 13) | intensity_g; // intensity_rb = pin 7
+  static const uint32_t intensity = 1 << 13; // intensity_rb = pin 7
 
   /* index 0 is output during blanking period!
    * The CRT monitor uses that time to measure black levels, if color
@@ -204,91 +202,61 @@ FLASHMEM static void InitLUT(void) {
   PROGMEM static const uint32_t fgColorTable[16] = {0, blue, green, blue|green, red, red|blue, red|green, red|green|blue,
                                             intensity, intensity|blue, intensity|green, intensity|blue|green, intensity|red, intensity|red|blue, intensity|red|green, intensity|red|green|blue};
 
-  // clear LUT1, just to ensure we don't accidentally end up using it
-  // (LUT1 is used when the lowest bit of the framebuffer address is set)
   LCDIF_LUT0_ADDR = 0;
-  LCDIF_LUT1_ADDR = 0;
-  for (size_t i=0; i < (sizeof(fgColorTable)/sizeof(fgColorTable[0])); i++) {
-    LCDIF_LUT0_DATA = fgColorTable[i];
-    LCDIF_LUT1_DATA = 0;
+  LCDIF_LUT0_DATA = 0; // black
+  for (size_t i=0; i < 16; i++) {
+    LCDIF_LUT0_DATA = fgColorTable[(i + rot) & 0xf];
   }
   // activate LUT
   LCDIF_LUT_CTRL = 0;
+  asm volatile("dmb");
+  ++rot;
 }
 
-// draws scrolling colorbars
 static void FillFrameBuffer(uint8_t *fb) {
-  int height = timing.height;
-  int width = timing.width;
-  size_t pitch = width;
+  // draw mandelbrot
+  float left = -2.2f;
+  float top = -1.5f;
+  float right = 0.8f;
+  float bottom = 1.5f;
 
-  const int radius = height/6 - 10;
-  static int xoff = radius;
-  static int yoff = radius;
-  static int xdir = 4;
-  static int ydir = 2;
-  static uint8_t bg = 8;
-  static uint8_t fg = 8;
-  const int limit = radius*radius;
+  float xscale = (right - left) / timing.width;
+  float yscale = (bottom - top) / timing.height;
 
-  bool hit = false;
-  if (xoff >= width-radius) {
-    hit = true;
-    xdir = -xdir;
-    xoff = width-radius;
-  }
-  if (xoff <= radius) {
-    hit = true;
-    xdir = -xdir;
-    xoff = radius;
-  }
-  if (yoff >= height-radius) {
-    hit = true;
-    ydir = -ydir;
-    yoff = height-radius;
-  }
-  if (yoff <= radius) {
-    hit = true;
-    ydir = -ydir;
-    yoff = radius;
-  }
+  for (int y=0; y < (int)timing.height; y++)
+  {
+    for (int x=0; x < (int)timing.width; x++)
+    {
+      float cx = x * xscale + left;
+      float cy = y * yscale + top;
 
-  if (hit) {
-    if (++fg == 16)
-      fg = 8;
-    if (++bg == 24)
-      bg = 0;
-  }
+      float zx = 0, zy = 0;
+      uint8_t c = 0;
 
-  for (int y=0; y < height; y++) {
-    uint8_t *p = fb;
-    for (int x=0; x < width;)  {
-      uint8_t c;
-      int xdiff = x-xoff;
-      int ydiff = y-yoff;
-      c = ((xdiff*xdiff + ydiff*ydiff) <= limit) ? fg : (bg/3);
-      x++;
-      *p++ = c;
+      while (((zx * zx + zy * zy) < 5) && (c < 255))
+      {
+        float tx = zx * zx - zy * zy + cx;
+        zy =2 * zx * zy + cy;
+        zx = tx;
+        c++;
+      }
+      fb[x] = 16 - (c & 15);
     }
-    arm_dcache_flush(fb, (p-fb));
-    fb += pitch;
+    arm_dcache_flush(fb, timing.width);
+    fb += timing.width;
   }
-
-  xoff += xdir;
-  yoff += ydir;
 }
 
 void setup() {
   Serial.begin(0);
 
-  s_frameBuffer[0] = (uint8_t*)extmem_base;
-  s_frameBuffer[1] = (uint8_t*)extmem_base + sizeof(framebuffer_t);
+  s_frameBuffer = (uint8_t*)extmem_base;
 
   set_vid_clk(4*timing.clk_num,timing.clk_den);
   init_lcd(&timing);
 
-  LCDIF_CUR_BUF = (uint32_t)s_frameBuffer[1];
-  LCDIF_NEXT_BUF = (uint32_t)s_frameBuffer[0];
+  LCDIF_CUR_BUF = (uint32_t)s_frameBuffer;
+  LCDIF_NEXT_BUF = (uint32_t)s_frameBuffer;
 
   Serial.println("Enabling LCDIF interrupt");
   attachInterruptVector(IRQ_LCDIF, LCDIF_ISR);
@@ -297,8 +265,7 @@ void setup() {
 
   InitLUT();
 
-  FillFrameBuffer(s_frameBuffer[0]);
-  FillFrameBuffer(s_frameBuffer[1]);
+  FillFrameBuffer(s_frameBuffer);
 
   Serial.println("Unmasking frame interrupt");
   // unmask CUR_FRAME_DONE interrupt
@@ -311,14 +278,11 @@ void setup() {
 }
 
 void loop() {
-  static uint32_t nextBufferIndex;
+  static unsigned int frameCount;
   if (s_frameDone) {
-    nextBufferIndex ^= 1;
-
-    // this is the buffer that just finished, redraw it
-    FillFrameBuffer(s_frameBuffer[nextBufferIndex]);
+    if ((++frameCount & 0xF) == 0)
+      InitLUT();
     // queue for display
-    LCDIF_NEXT_BUF = (uint32_t)s_frameBuffer[nextBufferIndex];
     s_frameDone = false;
   }
 }
