@@ -16,6 +16,29 @@
  * HSYNC (35) <---------------68R---------------------------> VGA PIN 13
  */
 
+//=====================================
+// Physical pin and FlexIO pin Defines.
+// Defined for T41, MicroMod and SDRAM
+// dev board V4.0.
+//=====================================
+#define RED_PIN 11
+#define GRN_PIN 12
+#define BLU_PIN 10
+#define INTENSITY_PIN 13
+
+#if defined(ARDUINO_TEENSY41)
+#define VSYNC_PIN 34
+#define HSYNC_PIN 35
+#define FLEX_VSYNC_PIN 29
+#define FLEX_HSYNC_PIN 28
+#else // MicroMod and Dev Board V4.0
+#define VSYNC_PIN 8
+#define HSYNC_PIN 7
+#define FLEX_VSYNC_PIN 16
+#define FLEX_HSYNC_PIN 17
+#endif
+//=====================================
+
 // horizontal values must be divisible by 8 for correct operation
 typedef struct {
   uint32_t height;
@@ -69,8 +92,11 @@ FLASHMEM FlexIO2VGA::FlexIO2VGA(const vga_timing& mode, bool half_height, bool h
   IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_01 = 4; // FLEXIO2_D1    GREEN
   IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_00 = 4; // FLEXIO2_D0    BLUE
   IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_03 = 4; // FLEXIO2_D3    INTENSITY
-  IOMUXC_SW_MUX_CTL_PAD_GPIO_B1_13 = 4; // FLEXIO2_D29   VSYNC
-  IOMUXC_SW_MUX_CTL_PAD_GPIO_B1_12 = 4; // FLEXIO2_D28   HSYNC
+  IOMUXC_SW_MUX_CTL_PAD_GPIO_B1_00 = 4; // FLEXIO2_D29   VSYNC
+  IOMUXC_SW_MUX_CTL_PAD_GPIO_B1_01 = 4; // FLEXIO2_D28   HSYNC
+
+//  IOMUXC_SW_MUX_CTL_PAD_GPIO_B1_13 = 4; // FLEXIO2_D29   VSYNC
+//  IOMUXC_SW_MUX_CTL_PAD_GPIO_B1_12 = 4; // FLEXIO2_D28   HSYNC
 
   dma_chans[0] = dma2.channel;
   dma_chans[1] = dma1.channel;
@@ -111,42 +137,42 @@ FLASHMEM FlexIO2VGA::FlexIO2VGA(const vga_timing& mode, bool half_height, bool h
   // on = HSW, off = rest of line
   FLEXIO2_TIMCMP1 = ((((mode.width+mode.hbp+mode.hfp)/8)-1)<<8) | ((mode.hsw/8)-1);
   // trigger = timer0, HSYNC=D28
-  FLEXIO2_TIMCTL1 = FLEXIO_TIMCTL_TRGSEL(4*0+3) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINCFG(3) | FLEXIO_TIMCTL_PINSEL(28) | FLEXIO_TIMCTL_TIMOD(2) | (mode.hsync_pol*FLEXIO_TIMCTL_PINPOL);
+  FLEXIO2_TIMCTL1 = FLEXIO_TIMCTL_TRGSEL(4*0+3) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINCFG(3) | FLEXIO_TIMCTL_PINSEL(FLEX_HSYNC_PIN) | FLEXIO_TIMCTL_TIMOD(2) | (mode.hsync_pol*FLEXIO_TIMCTL_PINPOL);
 
   // timer 2: frame counter
   // tick on HSYNC
   FLEXIO2_TIMCFG2 = FLEXIO_TIMCFG_TIMDEC(1);
   FLEXIO2_TIMCMP2 = ((mode.height+mode.vbp+mode.vfp+mode.vsw)*2)-1;
   // trigger = HYSNC pin
-  FLEXIO2_TIMCTL2 = FLEXIO_TIMCTL_TRGSEL(2*28) | (mode.hsync_pol * FLEXIO_TIMCTL_TRGPOL) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_TIMOD(3);
+  FLEXIO2_TIMCTL2 = FLEXIO_TIMCTL_TRGSEL(2*FLEX_HSYNC_PIN) | (mode.hsync_pol * FLEXIO_TIMCTL_TRGPOL) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_TIMOD(3);
 
   // timer 3: generate VSYNC
   FLEXIO2_TIMCFG3 = FLEXIO_TIMCFG_TIMDIS(2) | FLEXIO_TIMCFG_TIMENA(7);
   // active for VSW lines. 4*total horizontal pixels*vertical sync length must be <= 65536 to not overflow this timer
   FLEXIO2_TIMCMP3 = (4*mode.vsw*(mode.width+mode.hbp+mode.hsw+mode.hfp))-1;
   // trigger = frame counter, VSYNC=D29
-  FLEXIO2_TIMCTL3 = FLEXIO_TIMCTL_TRGSEL(4*2+3) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINCFG(3) | FLEXIO_TIMCTL_PINSEL(29) | FLEXIO_TIMCTL_TIMOD(3) | (mode.vsync_pol*FLEXIO_TIMCTL_PINPOL);
+  FLEXIO2_TIMCTL3 = FLEXIO_TIMCTL_TRGSEL(4*2+3) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINCFG(3) | FLEXIO_TIMCTL_PINSEL(FLEX_VSYNC_PIN) | FLEXIO_TIMCTL_TIMOD(3) | (mode.vsync_pol*FLEXIO_TIMCTL_PINPOL);
 
   // timer4: count VSYNC and back porch
   // enable on VSYNC start, disable after (VSW+VBP)*2 edges of HSYNC
   FLEXIO2_TIMCFG4 = FLEXIO_TIMCFG_TIMDEC(2) | FLEXIO_TIMCFG_TIMDIS(2) | FLEXIO_TIMCFG_TIMENA(6);
   FLEXIO2_TIMCMP4 = ((mode.vsw+mode.vbp)*2)-1;
   // trigger = VSYNC pin, pin = HSYNC
-  FLEXIO2_TIMCTL4 = FLEXIO_TIMCTL_TRGSEL(2*29) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINSEL(28) | FLEXIO_TIMCTL_TIMOD(3) | (mode.vsync_pol*FLEXIO_TIMCTL_TRGPOL) | (mode.hsync_pol*FLEXIO_TIMCTL_PINPOL);
+  FLEXIO2_TIMCTL4 = FLEXIO_TIMCTL_TRGSEL(2*FLEX_VSYNC_PIN) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINSEL(FLEX_HSYNC_PIN) | FLEXIO_TIMCTL_TIMOD(3) | (mode.vsync_pol*FLEXIO_TIMCTL_TRGPOL) | (mode.hsync_pol*FLEXIO_TIMCTL_PINPOL);
 
   // timer 5: vertical active region
   // enable when previous timer finishes, disable after height*2 edges of HSYNC
   FLEXIO2_TIMCFG5 = FLEXIO_TIMCFG_TIMDEC(2) | FLEXIO_TIMCFG_TIMDIS(2) | FLEXIO_TIMCFG_TIMENA(6);
   FLEXIO2_TIMCMP5 = (mode.height*2)-1;
   // trigger = timer4 negative, pin = HSYNC
-  FLEXIO2_TIMCTL5 = FLEXIO_TIMCTL_TRGSEL(4*4+3) | FLEXIO_TIMCTL_TRGPOL | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINSEL(28) | FLEXIO_TIMCTL_TIMOD(3) | (mode.vsync_pol*FLEXIO_TIMCTL_PINPOL);
+  FLEXIO2_TIMCTL5 = FLEXIO_TIMCTL_TRGSEL(4*4+3) | FLEXIO_TIMCTL_TRGPOL | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINSEL(FLEX_HSYNC_PIN) | FLEXIO_TIMCTL_TIMOD(3) | (mode.vsync_pol*FLEXIO_TIMCTL_PINPOL);
 
   // timer 6: horizontal active region
   // configured as PWM: OFF for HSYNC+HBP, ON for active region, reset (to off state) when HSYNC occurs (off state covers HFP then resets)
   FLEXIO2_TIMCFG6 = FLEXIO_TIMCFG_TIMOUT(1) | FLEXIO_TIMCFG_TIMDEC(1) | FLEXIO_TIMCFG_TIMRST(4) | FLEXIO_TIMCFG_TIMDIS(1) | FLEXIO_TIMCFG_TIMENA(1);
   FLEXIO2_TIMCMP6 = ((((mode.hsw+mode.hbp)/8)-1)<<8) | ((mode.width/8)-1);
   // trigger = timer0, pin = HSYNC
-  FLEXIO2_TIMCTL6 = FLEXIO_TIMCTL_TRGSEL(4*0+3) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINSEL(28) | FLEXIO_TIMCTL_TIMOD(2) | (mode.hsync_pol*FLEXIO_TIMCTL_PINPOL);
+  FLEXIO2_TIMCTL6 = FLEXIO_TIMCTL_TRGSEL(4*0+3) | FLEXIO_TIMCTL_TRGSRC | FLEXIO_TIMCTL_PINSEL(FLEX_HSYNC_PIN) | FLEXIO_TIMCTL_TIMOD(2) | (mode.hsync_pol*FLEXIO_TIMCTL_PINPOL);
 
   // timer 7: output pixels from shifter, runs only when trigger is ON
   FLEXIO2_TIMCFG7 = FLEXIO_TIMCFG_TIMDIS(6) | FLEXIO_TIMCFG_TIMENA(6) | FLEXIO_TIMCFG_TSTOP(2);
