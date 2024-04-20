@@ -155,12 +155,12 @@ FLASHMEM static unsigned int ns_to_clocks(float ns, float freq)
 	return (unsigned int)clocks;
 }
 
-FLASHMEM static bool IPCommand(uint16_t command)
+FLASHMEM static bool IPCommand(uint16_t command, uint32_t offset)
 {
 	/* Reset status and error */
 	SEMC_INTR = SEMC_INTR_IPCMDDONE | SEMC_INTR_IPCMDERR;
 	/* Set address */
-	SEMC_IPCR0 = SDRAM_BASE;
+	SEMC_IPCR0 = SDRAM_BASE+offset;
 	/* Send command code */
 	SEMC_IPCMD = command | 0xA55A0000;
 
@@ -175,15 +175,15 @@ FLASHMEM static bool IPCommand(uint16_t command)
 	return true;
 }
 
-FLASHMEM static bool IPCommandWrite(uint16_t command, uint32_t data)
+FLASHMEM static bool IPCommandWrite(uint16_t command, uint32_t offset, uint32_t data)
 {
 	SEMC_IPTXDAT = data;
-	return IPCommand(command);
+	return IPCommand(command, offset);
 }
 
-FLASHMEM static bool IPCommandRead(uint16_t command, uint32_t *data)
+FLASHMEM static bool IPCommandRead(uint16_t command, uint32_t offset, uint32_t *data)
 {
-	if (IPCommand(command) == false)
+	if (IPCommand(command, offset) == false)
 		return false;
 
 	*data = SEMC_IPRXDAT;
@@ -365,23 +365,24 @@ FLASHMEM void startup_middle_hook(void)
 	SEMC_IPCR2 = 0;
 
 	/* Initialize SDRAM device */
-	if (!IPCommand(15)) // Precharge All
+	if (!IPCommand(15,0)) // Precharge All
 		return;
-	if (!IPCommand(12) || !IPCommand(12)) // 2x AutoRefresh
+	if (!IPCommand(12,0) || !IPCommand(12,0)) // 2x AutoRefresh
 		return;
 	/* Set mode register: burst length=8, CAS */
-	if (!IPCommandWrite(10, (CAS<<4)|3))
+	if (!IPCommandWrite(10, 0, (CAS<<4)|3))
 		return;
 	/* Enable refresh */
 	SEMC_SDRAMCR3 |= SEMC_SDRAMCR3_REN;
 
 	// basic test to see if SDRAM is working
 	uint32_t orig = PROBE_DATA;
-	for (int i=0; i < 32; i++) {
+	for (unsigned int i=0; i < SDRAM_SIZE; i++) {
 		uint32_t r=0;
-		if (!IPCommandWrite(9, orig)) // Write
+		uint32_t offset = (i<<20)+i;
+		if (!IPCommandWrite(9, offset, orig)) // Write
 			return;
-		if (!IPCommandRead(8, &r)) // Read
+		if (!IPCommandRead(8, offset, &r)) // Read
 			return;
 		if (r != orig)
 			return;
