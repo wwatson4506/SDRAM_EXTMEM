@@ -252,7 +252,14 @@ FLASHMEM void startup_middle_hook(void)
 	IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_39 = /* SEMC_DQS    */ 0x0110F9;
 
 	// initialize pin muxes: ALT 0 is SEMC
-	// output-only pins:
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_00 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_01 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_02 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_03 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_04 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_05 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_06 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_07 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_08 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_09 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_10 = \
@@ -275,16 +282,6 @@ FLASHMEM void startup_middle_hook(void)
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_27 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_28 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_29 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_38 = 0;
-	// input/outpins pins (data and DQS), activate SION
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_00 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_01 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_02 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_03 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_04 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_05 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_06 = \
-	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_07 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_30 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_31 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_32 = \
@@ -293,6 +290,8 @@ FLASHMEM void startup_middle_hook(void)
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_35 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_36 = \
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_37 = \
+	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_38 = 0;
+	// DQS: activate SION
 	IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_39 = 0x10;
 
 	/* Configure SEMC clock */
@@ -303,7 +302,6 @@ FLASHMEM void startup_middle_hook(void)
 
 	const float freq = SEMC_freq(semc_clk);
 
-	delayMicroseconds(1);
 	CCM_CCGR3 |= CCM_CCGR3_SEMC(CCM_CCGR_ON);
 
 	/* software reset */
@@ -316,15 +314,6 @@ FLASHMEM void startup_middle_hook(void)
 	SEMC_BR6 = 0;
 	SEMC_BR7 = 0;
 	SEMC_BR8 = 0;
-	SEMC_MCR = SEMC_MCR_SWRST;
-	uint32_t m = micros();
-	while (SEMC_MCR & SEMC_MCR_SWRST)
-	{
-		if (micros() - m > 1500)
-		{
-			return;
-		}
-	}
 
 	SEMC_MCR = SEMC_MCR_MDIS | SEMC_MCR_BTO(0x1F) | (freq > 133e6f ? SEMC_MCR_DQSMD : 0);
 
@@ -347,13 +336,13 @@ FLASHMEM void startup_middle_hook(void)
 		SEMC_SDRAMCR1_ACT2PRE((ns_to_clocks(42, freq)-1)) | // tRAS: ACTIVE to PRECHARGE
 		SEMC_SDRAMCR1_CKEOFF((ns_to_clocks(42, freq)-1)) |  // self refresh
 		SEMC_SDRAMCR1_WRC((ns_to_clocks(12, freq)-1)) |     // tWR: WRITE recovery
-		SEMC_SDRAMCR1_RFRC((ns_to_clocks(67, freq)-1)) |    // tRFC or tXSR: REFRESH recovery
+		SEMC_SDRAMCR1_RFRC((ns_to_clocks(60, freq)-1)) |    // tRFC or tXSR: REFRESH recovery
 		SEMC_SDRAMCR1_ACT2RW((ns_to_clocks(18, freq)-1)) |  // tRCD: ACTIVE to READ/WRITE
 		SEMC_SDRAMCR1_PRE2ACT((ns_to_clocks(18, freq)-1));  // tRP: PRECHARGE to ACTIVE/REFRESH
 	SEMC_SDRAMCR2 =
-		SEMC_SDRAMCR2_SRRC((ns_to_clocks(67, freq)-1)) |
-		SEMC_SDRAMCR2_REF2REF(ns_to_clocks(60, freq)) |  /* No minus one to keep with RM */
-		SEMC_SDRAMCR2_ACT2ACT(ns_to_clocks(60, freq)) |  /* No minus one to keep with RM */
+		SEMC_SDRAMCR2_SRRC((ns_to_clocks(66, freq)-1)) |
+		SEMC_SDRAMCR2_REF2REF(ns_to_clocks(60, freq)-1) |
+		SEMC_SDRAMCR2_ACT2ACT(ns_to_clocks(60, freq)-1) |
 		SEMC_SDRAMCR2_ITO(0);
 
 	uint32_t prescaleperiod = 160 * (1000000000 / freq);
@@ -376,7 +365,6 @@ FLASHMEM void startup_middle_hook(void)
 	SEMC_IPCR2 = 0;
 
 	/* Initialize SDRAM device */
-	delayMicroseconds(100);
 	if (!IPCommand(15)) // Precharge All
 		return;
 	if (!IPCommand(12) || !IPCommand(12)) // 2x AutoRefresh
